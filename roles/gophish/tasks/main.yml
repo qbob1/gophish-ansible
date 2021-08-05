@@ -1,0 +1,161 @@
+- name: Change /etc/hostname
+  hostname:
+    name: "{{ hostname }}"
+
+- name: Update APT package cache.
+  apt:
+    update_cache: yes
+
+- name: Upgrade APT to the latest packages.
+  apt:
+    upgrade: safe
+
+- name: Install specified packages.
+  apt:
+    pkg: "{{ install_packages }}"
+    state: latest
+
+- name: Ensure the cryptography Python package is installed
+  pip:
+    name: cryptography
+
+- name: Ensure ufw is installed on the machine
+  package:
+    name: ufw
+    state: present
+
+- name: Allow TCP 22 for SSH.
+  ufw:
+    rule: allow
+    port: '22'
+    proto: tcp
+
+- name: Allow TCP 443 for Gophish.
+  ufw:
+    rule: allow
+    port: '443'
+    proto: tcp
+
+- name: Enable ufw.
+  ufw:
+    state: enabled
+    policy: deny
+  when: enable_ufw_firewall
+
+- name: Get SSL Certs
+  shell: "certbot certonly --standalone --noninteractive --agree-tos --email {{ certbot_admin_email }} -d {{ domains | join(',') }}"
+  
+- name: set up automatic renewal
+  become: yes
+  cron:
+    name: "Letsencrypt renewal"
+    job: "certbot renew"
+    day: 1
+
+- name: Update postfix main.cf configuration file.
+  template:
+    src: main.cf.j2
+    dest: /etc/postfix/main.cf
+    backup: yes
+    owner: root
+    group: root
+    mode: 0644
+
+- name: Add SMTP authentication cert
+  shell: "postconf -e 'smptd_tls_cert_file = /etc/letsencrypt/live/{{domains[0]}}/fullchain.pem'"
+
+- name: Add SMTP authentication key
+  shell: "postconf -e 'smptd_tls_key_file = /etc/letsencrypt/live/{{domains[0]}}/privkey.pem'"
+
+- name: Restart postfix.
+  service:
+    name: postfix
+    state: restarted
+
+- name: Ensure postfix is started and enabled at boot.
+  service:
+    name: postfix
+    state: started
+    enabled: yes
+
+- name: Download latest Gophish .zip file.
+  get_url:
+    validate_certs: True
+    url: https://getgophish.com/releases/latest/linux/64
+    dest: "/home/{{ gophish_user }}/gophish.zip"
+    mode: 0755
+    owner: "{{ gophish_user }}"
+    group: "{{ gophish_user }}"
+
+- name: Create directory for gophish.
+  file:
+    path: "/home/{{ gophish_user }}/gophish_deploy"
+    state: directory
+    mode: 0755
+    owner: "{{ gophish_user }}"
+    group: "{{ gophish_user }}"
+
+- name: Unzip gophish file.
+  unarchive:
+    src: "/home/{{ gophish_user }}/gophish.zip"
+    dest: "/home/{{ gophish_user }}/gophish_deploy"
+    remote_src: True  # File is on target server and not locally.
+    owner: "{{ gophish_user }}"
+    group: "{{ gophish_user }}"
+
+- name: Change ownership of Gophish folder and files.
+  file:
+    path: /home/{{ gophish_user }}/gophish_deploy
+    owner: "{{ gophish_user }}"
+    group: "{{ gophish_user }}"
+    recurse: True
+
+- name: Ensure gophish binary is allowed to bind to privileged ports using setcap
+  capabilities:
+    path: /home/{{ gophish_user }}/gophish_deploy/gophish
+    capability: cap_net_bind_service+eip
+    state: present
+
+- name: Copy config.json file.
+  copy:
+    src: files/config.json
+    dest: "/home/{{ gophish_user }}/gophish_deploy/config.json"
+    owner: "{{ gophish_user }}"
+    group: "{{ gophish_user }}"
+    mode: 0644
+
+- name: Link pem to crt
+  ansible.builtin.file:
+    src: /etc/letsencrypt/live/{{domains[0]}}/fullchain.pem
+    dest: /home/{{ gophish_user }}/gophish_deploy/gophish.crt
+    owner: "{{ gophish_user }}"
+    group: "{{ gophish_user }}"
+    state: link
+
+- name: Link privkey to key
+ansible.builtin.file:
+    src: /etc/letsencrypt/live/{{domains[0]}}/privkey.pem
+    dest: /home/{{ gophish_user }}/gophish_deploy/gophish.key
+    owner: "{{ gophish_user }}"
+    group: "{{ gophish_user }}"
+    state: link
+
+- name: Ensure gophish service file is properly set
+  template:
+    src: gophish.service.j2
+    dest: /etc/systemd/system/gophish.service
+    mode: 644
+
+- name: Ensure systemd to reread configs
+  systemd:
+    daemon_reload: yes
+
+- name: Ensure gophish is properly started
+  service:
+    name: gophish.service
+    state: started
+    enabled: yes
+
+- name: Reboot the box in 1 minute.
+  command: shutdown -r 1
+  when: reboot_box

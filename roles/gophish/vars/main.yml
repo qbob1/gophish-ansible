@@ -1,0 +1,23 @@
+enable_ufw_firewall: true
+
+install_packages:
+  - postfix
+  - unzip
+  - libcap2-bin
+  - python-pip
+  - certbot
+
+certbot_create_if_missing: false
+certbot_create_method: standalone
+certbot_admin_email: email@example.com
+domains:
+     - example1.com
+     - example2.com
+
+hostname: gophish
+gophish_user: gophish
+postfix_hostname: gophish
+postfix_inet_interfaces: 127.0.0.1
+gophish_domain: gophish.local
+# Required if changing /etc/hostname to something different.
+reboot_box: true
