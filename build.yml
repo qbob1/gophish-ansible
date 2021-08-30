@@ -1,0 +1,11 @@
+- hosts: all
+  remote_user: root
+  gather_facts: true
+  roles:
+    - name: Include Vars
+        include_vars: vars.yml
+    - role: ansible-dkim
+    - role: config
+  # - role: pseudo-certbot
+    - role: certbot
+    - role: gophish  

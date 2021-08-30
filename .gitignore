@@ -1,0 +1,4 @@
+*.pem
+vars.yml
+.DS_Store*
+/hosts

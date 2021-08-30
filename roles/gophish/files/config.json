@@ -1,18 +1,18 @@
 {
 	"admin_server": {
-		"listen_url": "127.0.0.1:3333",
+		"listen_url": "0.0.0.0:3333",
 		"use_tls": false,
-		"cert_path": "/etc/ssl/crt/gophish.crt",
-		"key_path": "/etc/ssl/private/gophish.pem"
+		"cert_path": "./gophish.crt",
+		"key_path": "./gophish.key"
 	},
 	"phish_server": {
 		"listen_url": "0.0.0.0:443",
 		"use_tls": true,
-		"cert_path": "/etc/ssl/crt/gophish.crt",
-		"key_path": "/etc/ssl/private/gophish.pem"
+		"cert_path": "./gophish.crt",
+		"key_path": "./gophish.key"
 	},
-	"db_name": "sqlite3",
-	"db_path": "gophish.db",
+	"db_name": "mysql",
+	"db_path": "gophish:gophish_passwd@(gophish-db:3306)/gophish?charset=utf8&parseTime=True&loc=UTC",
 	"migrations_prefix": "db/db_",
 	"contact_address": "",
 	"logging": {

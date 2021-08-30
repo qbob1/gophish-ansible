@@ -1,0 +1,20 @@
+
+- name: Install certbot
+  apt:
+    pkg: certbot
+    state: latest
+
+- name: Ensure the cryptography Python package is installed
+  pip:
+    name: cryptography
+
+- name: Get SSL Certs
+  shell: "certbot certonly --standalone --noninteractive --agree-tos --email {{ certbot_admin_email }} -d {{ domain }}"
+  
+- name: set up automatic renewal
+  become: yes
+  cron:
+    name: "Letsencrypt renewal"
+    job: "certbot renew"
+    day: 1
+

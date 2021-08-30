@@ -1,0 +1,48 @@
+---
+    version: "3.3"
+    
+    services:
+      gophish:
+        container_name: gophish
+        restart: unless-stopped
+        image: gophish/gophish
+        depends_on:
+          - gophish-db
+        ports:
+          - "443:443"
+          - "127.0.0.1:3333:3333"
+        secrets:
+          - source: gophish_config
+            target: /opt/gophish/config.json
+          - source: gophish.crt
+            target: /opt/gophish/gophish.crt
+          - source: gophish.key
+            target: /opt/gophish/gophish.key
+    
+      gophish-db:
+        image: mysql
+        container_name: mysql
+        restart: unless-stopped
+        secrets:
+          - db_root_password
+          - db_gophish_password
+        volumes:
+          - /gophish/my.cnf:/etc/mysql/my.cnf
+          - /gophish/gophish-db:/var/lib/mysql
+          - /gophish/create_db.sql:/docker-entrypoint-initdb.d/create_db.sql
+        environment:
+          MYSQL_ROOT_PASSWORD_FILE: /run/secrets/db_root_password
+          MYSQL_USER: gophish
+          MYSQL_PASSWORD_FILE: /run/secrets/db_gophish_password
+      
+    secrets:
+      db_root_password:
+        file: /gophish/db_root_password
+      db_gophish_password:
+        file: /gophish/db_gophish_password                     
+      gophish_config:
+        file: /gophish/config.json
+      gophish.key:
+        file: /gophish/gophish.key
+      gophish.crt:
+        file: /gophish/gophish.crt

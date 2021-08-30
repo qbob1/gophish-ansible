@@ -1,0 +1,12 @@
+- name: Create fake lets encrypt directory
+  file:
+    path: '/etc/letsencrypt/live/{{ domain }}/'
+    state: directory
+    
+- name: Copy existing certs
+  ansible.builtin.copy:
+    src: files/{{item}}
+    dest: '/etc/letsencrypt/live/{{ domain }}/{{ item }}'
+  loop:
+    - fullchain.pem
+    - privkey.pem

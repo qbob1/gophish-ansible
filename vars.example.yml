@@ -1,0 +1,10 @@
+# Example Vars File
+dkim_admin_email:
+dkim_selector:
+dkim_domains:
+    -
+dkim_same_key:
+certbot_admin_email:
+domain:
+test_email_to:
+domain:

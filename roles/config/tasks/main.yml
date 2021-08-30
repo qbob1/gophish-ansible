@@ -1,0 +1,42 @@
+- name: Change /etc/hostname
+  hostname:
+    name: "{{ hostname }}"
+
+- name: Update APT package cache.
+  apt:
+    update_cache: yes
+
+- name: Upgrade APT to the latest packages.
+  apt:
+    upgrade: safe
+    
+- name: Install pip3
+  apt:
+    pkg: python3-pip
+
+- name: Install jsondiff
+  pip:
+    name: jsondiff
+
+- name: Allow TCP 22 for SSH.
+  ufw:
+    rule: allow
+    port: '22'
+    proto: tcp
+
+- name: Allow TCP 80 for Certbot.
+  ufw:
+    rule: allow
+    port: '80'
+    proto: tcp
+
+- name: Allow TCP 443 for Gophish.
+  ufw:
+    rule: allow
+    port: '443'
+    proto: tcp
+
+- name: Enable ufw.
+  ufw:
+    state: enabled
+    policy: deny

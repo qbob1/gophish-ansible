@@ -1,161 +1,95 @@
-- name: Change /etc/hostname
-  hostname:
-    name: "{{ hostname }}"
+- name: Create Gophish group 
+  group:
+    name: gophish
+    state: present
 
-- name: Update APT package cache.
-  apt:
-    update_cache: yes
+- name: Create Gophish user
+  user:
+    name: gophish
+    uid: 1040
+    group: gophish
 
-- name: Upgrade APT to the latest packages.
+- name: Install docker
   apt:
-    upgrade: safe
-
-- name: Install specified packages.
-  apt:
-    pkg: "{{ install_packages }}"
+    pkg: "{{ item }}"
     state: latest
-
-- name: Ensure the cryptography Python package is installed
-  pip:
-    name: cryptography
-
-- name: Ensure ufw is installed on the machine
-  package:
-    name: ufw
-    state: present
-
-- name: Allow TCP 22 for SSH.
-  ufw:
-    rule: allow
-    port: '22'
-    proto: tcp
-
-- name: Allow TCP 443 for Gophish.
-  ufw:
-    rule: allow
-    port: '443'
-    proto: tcp
-
-- name: Enable ufw.
-  ufw:
-    state: enabled
-    policy: deny
-  when: enable_ufw_firewall
-
-- name: Get SSL Certs
-  shell: "certbot certonly --standalone --noninteractive --agree-tos --email {{ certbot_admin_email }} -d {{ domains | join(',') }}"
+  with_items: 
+    - docker 
+    - docker-compose
   
-- name: set up automatic renewal
-  become: yes
-  cron:
-    name: "Letsencrypt renewal"
-    job: "certbot renew"
-    day: 1
-
-- name: Update postfix main.cf configuration file.
-  template:
-    src: main.cf.j2
-    dest: /etc/postfix/main.cf
-    backup: yes
-    owner: root
-    group: root
-    mode: 0644
-
-- name: Add SMTP authentication cert
-  shell: "postconf -e 'smptd_tls_cert_file = /etc/letsencrypt/live/{{domains[0]}}/fullchain.pem'"
-
-- name: Add SMTP authentication key
-  shell: "postconf -e 'smptd_tls_key_file = /etc/letsencrypt/live/{{domains[0]}}/privkey.pem'"
-
-- name: Restart postfix.
-  service:
-    name: postfix
-    state: restarted
-
-- name: Ensure postfix is started and enabled at boot.
-  service:
-    name: postfix
-    state: started
-    enabled: yes
-
-- name: Download latest Gophish .zip file.
-  get_url:
-    validate_certs: True
-    url: https://getgophish.com/releases/latest/linux/64
-    dest: "/home/{{ gophish_user }}/gophish.zip"
-    mode: 0755
-    owner: "{{ gophish_user }}"
-    group: "{{ gophish_user }}"
-
-- name: Create directory for gophish.
-  file:
-    path: "/home/{{ gophish_user }}/gophish_deploy"
-    state: directory
-    mode: 0755
-    owner: "{{ gophish_user }}"
-    group: "{{ gophish_user }}"
-
-- name: Unzip gophish file.
-  unarchive:
-    src: "/home/{{ gophish_user }}/gophish.zip"
-    dest: "/home/{{ gophish_user }}/gophish_deploy"
-    remote_src: True  # File is on target server and not locally.
-    owner: "{{ gophish_user }}"
-    group: "{{ gophish_user }}"
-
-- name: Change ownership of Gophish folder and files.
-  file:
-    path: /home/{{ gophish_user }}/gophish_deploy
-    owner: "{{ gophish_user }}"
-    group: "{{ gophish_user }}"
-    recurse: True
-
-- name: Ensure gophish binary is allowed to bind to privileged ports using setcap
-  capabilities:
-    path: /home/{{ gophish_user }}/gophish_deploy/gophish
-    capability: cap_net_bind_service+eip
-    state: present
-
-- name: Copy config.json file.
+- name: Copy docker/gophish files
   copy:
-    src: files/config.json
-    dest: "/home/{{ gophish_user }}/gophish_deploy/config.json"
-    owner: "{{ gophish_user }}"
-    group: "{{ gophish_user }}"
+    src: files/
+    dest: /gophish
+    owner: gophish
+    group: gophish
     mode: 0644
 
-- name: Link pem to crt
-  ansible.builtin.file:
-    src: /etc/letsencrypt/live/{{domains[0]}}/fullchain.pem
-    dest: /home/{{ gophish_user }}/gophish_deploy/gophish.crt
-    owner: "{{ gophish_user }}"
-    group: "{{ gophish_user }}"
-    state: link
+- name: Generate Passwords
+  set_fact:
+    root_pass: "{{ lookup('password', '/dev/null length=64 chars=ascii_letters,digits') }}"
+    gophish_pass: "{{ lookup('password', '/dev/null length=64 chars=ascii_letters,digits') }}"
 
-- name: Link privkey to key
-ansible.builtin.file:
-    src: /etc/letsencrypt/live/{{domains[0]}}/privkey.pem
-    dest: /home/{{ gophish_user }}/gophish_deploy/gophish.key
-    owner: "{{ gophish_user }}"
-    group: "{{ gophish_user }}"
-    state: link
+- name: Register DB passwords
+  shell: echo '{{item.value}}' >> /gophish/{{item.name}}
+  loop:
+    - {name: 'db_root_password',   value: '{{ root_pass }}'}
+    - {name: 'db_gophish_password',value: '{{ gophish_pass }}'}
 
-- name: Ensure gophish service file is properly set
-  template:
-    src: gophish.service.j2
-    dest: /etc/systemd/system/gophish.service
-    mode: 644
+- name: Update Gophish Config 
+  shell: sed -i 's/gophish_passwd/{{ gophish_pass }}/g' /gophish/config.json
 
-- name: Ensure systemd to reread configs
-  systemd:
-    daemon_reload: yes
+- name: Create SSL Cert links
+  shell: ln -s '/etc/letsencrypt/live/{{ domain }}/{{ item.value }}' /gophish/'{{ item.name }}'
+  loop:
+    - {name: 'gophish.crt', value: 'fullchain.pem'}
+    - {name: 'gophish.key', value: 'privkey.pem'}
 
-- name: Ensure gophish is properly started
-  service:
-    name: gophish.service
-    state: started
-    enabled: yes
+- name: Allow gophish to read crt/key
+  shell: chmod +r /gophish/gophish.crt /gophish/gophish.key
 
-- name: Reboot the box in 1 minute.
-  command: shutdown -r 1
-  when: reboot_box
+- name: Docker compose up gophish
+  docker_compose:
+    project_src: /gophish
+    state: present
+    
+- name: Get Ip of gophish container
+  docker_container_info:
+    name: gophish
+  register: gophish_ip
+  
+- name: Show ip of gophish container
+  debug:
+    var: gophish_ip
+
+- name: Update Postfix to talk to gophish
+  shell: postconf inet_interfaces=172.17.0.1 mynetworks="{{ gophish_ip.container.NetworkSettings.Networks.gophish_default.IPAddress }}"
+
+  
+- name: Allow gophish ip to localhost
+  shell: ufw allow in from "{{ gophish_ip.container.NetworkSettings.Networks.gophish_default.IPAddress }}"
+
+- name: Reload Postfix
+  ansible.builtin.service:
+    name: postfix
+    state: reloaded
+
+- name: Get GoPhish API key
+  community.docker.docker_container_exec:
+    container: mysql
+    command: /bin/sh -c 'mysql -u root -p{{ root_pass }} -B -N -e "use gophish; select api_key from users where username=\"admin\";"'
+  register: api_key
+
+- name: Copy over test email script
+  ansible.builtin.template:
+    src: templates/test_email.sh.j2
+    dest: /gophish/test_email.sh
+    mode: u=x,g=r,o=r
+
+- name: Send Test email
+  shell: bash /gophish/test_email.sh
+
+
+
+
+
